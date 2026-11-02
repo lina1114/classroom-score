@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: classroom-score
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/groups
+    envVars:
+      - key: PORT
+        value: "3000"
