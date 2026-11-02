@@ -1,0 +1,11 @@
+{
+  "name": "classroom-score",
+  "version": "1.0.0",
+  "private": true,
+  "description": "课堂在线评分应用 - 学生手机打分，教师大屏实时看板（零依赖）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}
