@@ -1,0 +1,7 @@
+node_modules/
+data/
+*.log
+tunnel.log
+server.log
+qrcode.png
+.DS_Store
