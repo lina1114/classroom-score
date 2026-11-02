@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>课堂作品评分</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f2f5fa; color: #1f2937; padding: 16px; padding-bottom: 110px; }
+  .header { text-align: center; margin-bottom: 14px; }
+  .header h1 { font-size: 20px; margin: 0 0 4px; color: #1d4ed8; }
+  .header p { font-size: 13px; color: #6b7280; margin: 0; }
+  .card { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 14px;
+          box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+  label { font-size: 14px; font-weight: 600; display: block; margin-bottom: 6px; }
+  input[type=text], select { width: 100%; padding: 12px; font-size: 16px;
+          border: 1.5px solid #d1d5db; border-radius: 10px; background: #fff; }
+  select { appearance: none; }
+  .work { border-top: 1px solid #eef2f7; padding-top: 14px; margin-top: 14px; }
+  .work:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+  .work-title { font-size: 16px; font-weight: 700; color: #111827; }
+  .work-owner { font-size: 12px; color: #9ca3af; margin-left: 6px; font-weight: 400; }
+  .work-desc { font-size: 13px; color: #4b5563; margin: 6px 0; line-height: 1.5; }
+  .work-img { width: 100%; border-radius: 10px; margin: 8px 0; max-height: 220px; object-fit: cover; }
+  .score-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .score-row button { width: 46px; height: 46px; font-size: 24px; border: none; border-radius: 12px;
+          background: #e0e7ff; color: #1d4ed8; font-weight: 700; flex: 0 0 auto; }
+  .score-row button:active { background: #c7d2fe; }
+  .score-row input[type=range] { flex: 1; height: 6px; accent-color: #1d4ed8; }
+  .score-val { flex: 0 0 auto; min-width: 64px; text-align: center; font-size: 22px;
+          font-weight: 800; color: #1d4ed8; background: #eff6ff; border-radius: 10px; padding: 6px 4px; }
+  .submit-bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px;
+          background: #fff; box-shadow: 0 -2px 12px rgba(0,0,0,.08); }
+  .submit-btn { width: 100%; padding: 16px; font-size: 18px; font-weight: 700; color: #fff;
+          background: #1d4ed8; border: none; border-radius: 12px; }
+  .submit-btn:disabled { background: #93b4f0; }
+  .status { text-align: center; font-size: 13px; color: #6b7280; margin-top: 8px; min-height: 18px; }
+  .toast { position: fixed; left: 50%; top: 24%; transform: translateX(-50%);
+          background: rgba(17,24,39,.92); color: #fff; padding: 12px 20px; border-radius: 10px;
+          font-size: 15px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 99; }
+  .toast.show { opacity: 1; }
+  .hint { font-size: 12px; color: #9ca3af; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1 id="title">课堂作品评分</h1>
+    <p id="roundHint">给除本组外的 7 个作品打分</p>
+  </div>
+
+  <div class="card" id="identity">
+    <label>你的姓名</label>
+    <input type="text" id="name" placeholder="请输入姓名" autocomplete="off" />
+    <label style="margin-top:12px">你所在的小组</label>
+    <select id="group"><option value="">请选择小组</option></select>
+    <div class="hint">选择小组后，系统会自动隐藏你本组的作品，你只需为其余 7 个作品打分。</div>
+  </div>
+
+  <div class="card" id="works" style="display:none">
+    <label>为以下作品打分（满分 <span id="maxScore">100</span> 分）</label>
+    <div id="workList"></div>
+  </div>
+
+  <div class="submit-bar">
+    <button class="submit-btn" id="submit" disabled>提交评分</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var works = [], myGroup = '', maxScore = 100;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(t._t); t._t = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  // 仅加载小组名单（不含任何作品内容），供学生选择“我所在的小组”
+  function loadGroups() {
+    fetch('/api/groups').then(function (r) { return r.json(); }).then(function (c) {
+      $('title').textContent = c.title || '课堂作品评分';
+      if (c.roundName) $('roundHint').textContent = '当前轮次：' + c.roundName + ' · 给除本组外的 7 个作品打分';
+      var sel = $('group'); sel.innerHTML = '<option value="">请选择小组</option>';
+      c.groups.forEach(function (g) {
+        var o = document.createElement('option'); o.value = g.id; o.textContent = g.name; sel.appendChild(o);
+      });
+    }).catch(function () { setTimeout(loadGroups, 1500); });
+  }
+
+  // 选好小组后，才向服务端请求“除本组外的其余作品”——本组作品数据根本不会下发到手机
+  $('group').addEventListener('change', function () {
+    myGroup = this.value;
+    if (!myGroup) { $('works').style.display = 'none'; works = []; return; }
+    $('works').style.display = 'block';
+    $('workList').innerHTML = '<div class="hint">加载作品…</div>';
+    fetch('/api/works?groupId=' + encodeURIComponent(myGroup))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        maxScore = d.maxScore || 100;
+        $('maxScore').textContent = maxScore;
+        if (d.roundName) $('roundHint').textContent = '当前轮次：' + d.roundName + ' · 给除本组外的 7 个作品打分';
+        works = d.groups || [];
+        renderWorks();
+      })
+      .catch(function () { $('workList').innerHTML = '<div class="hint">加载失败，正在重试…</div>'; setTimeout(function () { $('group').dispatchEvent(new Event('change')); }, 1500); });
+  });
+
+  function renderWorks() {
+    var list = $('workList'); list.innerHTML = '';
+    if (!works.length) { list.innerHTML = '<div class="hint">没有可评分的作品</div>'; return; }
+    works.forEach(function (g) {
+      var card = document.createElement('div'); card.className = 'work';
+      var html = '<div class="work-title">' + esc(g.workTitle) +
+                 '<span class="work-owner">（' + esc(g.name) + '）</span></div>';
+      if (g.workDesc) html += '<div class="work-desc">' + esc(g.workDesc) + '</div>';
+      if (g.workImage) html += '<img class="work-img" src="' + esc(g.workImage) + '" />';
+      html += '<div class="score-row">' +
+                '<button data-act="minus" data-id="' + g.id + '">−</button>' +
+                '<input type="range" min="0" max="' + maxScore + '" value="0" step="1" data-id="' + g.id + '">' +
+                '<button data-act="plus" data-id="' + g.id + '">+</button>' +
+                '<span class="score-val" id="val_' + g.id + '">0</span>' +
+              '</div>';
+      card.innerHTML = html;
+      list.appendChild(card);
+    });
+    list.querySelectorAll('input[type=range]').forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        $('val_' + inp.dataset.id).textContent = inp.value;
+      });
+    });
+    list.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.dataset.id, inp = list.querySelector('input[data-id="' + id + '"]');
+        var v = parseInt(inp.value, 10) || 0;
+        v = b.dataset.act === 'plus' ? Math.min(maxScore, v + 1) : Math.max(0, v - 1);
+        inp.value = v; $('val_' + id).textContent = v;
+      });
+    });
+    $('submit').disabled = false;
+  }
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); }
+
+  // 提交（带失败自动重试 + 防重复点击）
+  var sending = false, lastTap = 0;
+  $('submit').addEventListener('click', function () {
+    var now = Date.now();
+    if (sending) return;            // 提交中，忽略重复点击
+    if (now - lastTap < 2500) return; // 2.5 秒内重复点击只触发一次
+    lastTap = now;
+    doSubmit(0);
+  });
+
+  function doSubmit(attempt) {
+    var name = $('name').value.trim();
+    if (!name) { toast('请先填写姓名'); return; }
+    if (!myGroup) { toast('请先选择小组'); return; }
+
+    var scores = {};
+    document.querySelectorAll('#workList input[type=range]').forEach(function (inp) {
+      scores[inp.dataset.id] = parseInt(inp.value, 10) || 0;
+    });
+
+    sending = true;
+    $('submit').disabled = true;
+    $('status').textContent = '提交中…';
+
+    fetch('/api/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, groupId: myGroup, scores: scores })
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      sending = false; $('submit').disabled = false;
+      if (data && data.ok) {
+        $('status').textContent = '✓ 提交成功（已记录 ' + data.scoredCount + '/' + data.totalNeeded + ' 个作品，可修改后再提交）';
+        toast('提交成功');
+      } else if (data && data.code === 'NAME_REQUIRED') {
+        $('status').textContent = '请填写姓名'; sending = false; $('submit').disabled = false;
+      } else if (data && data.code === 'GROUP_INVALID') {
+        $('status').textContent = '小组无效，请重新选择'; sending = false; $('submit').disabled = false;
+      } else {
+        retry(attempt);
+      }
+    }).catch(function () {
+      retry(attempt);
+    });
+  }
+
+  function retry(attempt) {
+    sending = false; $('submit').disabled = false;
+    if (attempt >= 6) {
+      $('status').textContent = '网络不佳，正在后台重试…（无需操作）';
+      setTimeout(function () { doSubmit(0); }, 3000);
+      return;
+    }
+    var wait = Math.min(2000, 500 * Math.pow(1.8, attempt));
+    $('status').textContent = '提交中，自动重试（' + (attempt + 1) + '）…';
+    setTimeout(function () { doSubmit(attempt + 1); }, wait);
+  }
+
+  loadGroups();
+})();
+</script>
+</body>
+</html>
